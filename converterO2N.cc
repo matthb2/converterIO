@@ -40,9 +40,7 @@ computenitems(const int localpartid, const int fieldid, const int myrank, const 
 // - the name of the fields 
 // - the integers read from the header
 
-  int nItems;
-  //printf("irank: %d fieldname: %s ParaD: %d numVariables: %d\n",myrank,fieldName, para[0][0][0], numVariables);
-
+  int nItems = -1;
 
   if (cscompare("nbc values",fieldName))
     nItems = para[localpartid][fieldid][0] * (numVariables+1);
@@ -196,72 +194,25 @@ int main(int argc, char *argv[]) {
     printf("Starting to read some headers in the restart.##.## and geombc.dat.## files\n");
   }
 
-  for (  j = 0; j < nppp; j++  )
-    {
-      int ione = 1;
-      sprintf(gfname,"./%d-procs_case/restart.%d.%d",N_parts,N_steps,startpart+j);
-//			printf("before openfile(), myrank = %d \n", myrank);
-      openfile(gfname,"read",&TempFileHandle);
-//			printf("2 openfile(), myrank = %d \n", myrank);
-//			printf("1 readheader(), myrank = %d \n", myrank);
-      readheader( &TempFileHandle,
-		   "number of variables",
+  // The number of variables does not vary from one part to another. Do not read this info from every part.
+  // The ideal would be to ask only rank 0 to read only part 0 and broadcast the information to the other ranks. It saves a lot of time for very big meshes.
+  // Right now, every rank will read the number of variables from the solution field of one part only, which is already better than reading this info from every part.
+    int ithree = 3;
+    j = 0;
+    sprintf(gfname,"./%d-procs_case/restart.%d.%d",N_parts,N_steps,startpart+j);
+    openfile(gfname,"read",&TempFileHandle);
+    readheader( &TempFileHandle,
+		   "solution",
 		   (void*)iarray,
-		   &ione,
-		   "integer",
+		   &ithree,
+		   "double",
 		   "binary" );
-//			printf("2 readheader(), myrank = %d \n", myrank);
-      closefile(&TempFileHandle, "read");
-      numVariables[j] = iarray[0];
+    closefile(&TempFileHandle, "read");
+    for ( j = 0; j < nppp; j++ )
+      numVariables[j] = iarray[1]; //iarray[i] contains the number of variables from the header of the solution field
 
-//    It should be useless to read these information!!!! Fix this
-/*      bzero((void*)gfname,64);
-      sprintf(gfname,"./%d-procs_case/geombc.dat.%d",N_parts,startpart+j);
-      openfile(gfname,"read",&TempFileHandle);
-      readheader( &TempFileHandle,
-		   "number of interior tpblocks",
-		   (void*)iarray,
-		   &ione,
-		   "integer",
-		   "binary" );
-      numInteriorFields[j] = iarray[0]; // This only give the local number of blocks, not the total in the whole domain
-     // printf("file %d number of interior[%d] is %d\n",startpart+j,j,numInteriorFields[j]);
-*/
-
-/*
-      readheader( &TempFileHandle,
-		   "number of boundary tpblocks",
-		   (void*)iarray,
-		   &ione,
-		   "integer",
-		   "binary" );
-      closefile(&TempFileHandle, "read");
-      numBoundaryFields[j] = iarray[0];
-      //printf("file %d number of boundary[%d] is %d\n",startpart+j,j,numBoundaryFields[j]);
-*/
-      //      numInteriorFields[j] = 0;
-      //      numBoundaryFields[j] = 0;
-
-      
-//      printf("loop %d ,rank %d is waiting, nppp is %d\n",j,myrank,nppp);
-//      int ierr;
-//      ierr = MPI_Barrier(MPI_COMM_WORLD); // already there
-//        MPI_Barrier(MPI_COMM_WORLD); // already there
-//      fflush(stdout);
-//      if (myrank==0)  usleep(100);
-//      printf("loop %d ,rank %d is released, nppp is %d, ierr is %d\n",j,myrank,nppp, ierr);
-//      fflush(stdout);
-
-    }
-
-//    printf("rank %d is waiting\n",myrank);
-//    fflush(stdout);
     MPI_Barrier(MPI_COMM_WORLD); //added by MR
 
-
-//  for (  j = 0; j < nppp; j++  ) {
-//    printf("part, rank, number of variables, interior tpblocks, boundary tpblocks: %d %d %d %d %d\n",startpart+j,myrank,numVariables[j],numInteriorFields[j],numBoundaryFields[j]);
-//    }
 
   /////////////////////////
   for ( i = 0; i < nppp; i++ )
@@ -485,6 +436,13 @@ int main(int argc, char *argv[]) {
 		  boundaryCounter++;
         }
     }
+  
+  MPI_Barrier(MPI_COMM_WORLD);
+  if(myrank==0){
+    printf("There are %d total connectivity interior and %d total connectivity boundary\n", interiorCounter, boundaryCounter);
+  }
+ 
+
 
   // Now, start to read the integer fields
   for ( i = 0; i < nppp; i++ )
